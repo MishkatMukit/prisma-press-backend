@@ -25,7 +25,7 @@ app.use(cors(
 ))
 
 const endpointSecret = config.stripe_webhook_secret_key
-
+console.log("hello world");
 app.post("/api/subscription/webhook", express.raw({ type: 'application/json' }), (request, response) => {
     let event = request.body;
     console.log(event, "stripe request body");
