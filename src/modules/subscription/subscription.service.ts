@@ -1,6 +1,9 @@
+import type Stripe from "stripe"
 import config from "../../config"
 import { prisma } from "../../lib/prisma"
 import { stripe } from "../../lib/stripe"
+import { SubscriptionStatus } from "../../../generated/prisma/enums"
+import { handleChangeSubscription, handleCheckoutCompleted } from "./utils.subscription"
 
 const createCheckOutSession = async (userId: string) => {
     const transactionResult = await prisma.$transaction(async (tx) => {
@@ -42,7 +45,50 @@ const createCheckOutSession = async (userId: string) => {
         paymentUrl: transactionResult
     }
 }
+const handleWebHook = async (payload: Buffer, signature: string) => {
+    const event = stripe.webhooks.constructEvent(
+        payload,
+        signature,
+        config.stripe_webhook_secret_key
+    );
+    switch (event.type) {
+        case 'checkout.session.completed':
+            // console.log(paymentIntent);
+            await handleCheckoutCompleted(event.data.object)
+            
+            break;
+        case 'customer.subscription.updated':
+            // const paymentMethod = event.data.object;
+            await handleChangeSubscription(event.data.object)
+            break;
+        case 'customer.subscription.deleted':
+            // const paymentObject = event.data.object;
+            await handleChangeSubscription(event.data.object)
+            break;
+        default:
+            // Unexpected event type
+            console.log(`Unhandled event type ${event.type}.`);
+            break;
+    }
+}
+
+const getSubscriptionStatus = async(userId : string)=>{
+    const isSubscriptionExists = await prisma.subscription.findUniqueOrThrow({
+        where:{
+            userId
+        }
+    })
+    const isActive = isSubscriptionExists.status === "ACTIVE" && isSubscriptionExists.currentPeriodEnd && (new Date(isSubscriptionExists.currentPeriodEnd)> new Date())
+
+    return {
+        status : isSubscriptionExists.status,
+        isSubscribed : isActive,
+        currentPeriodEnd : isSubscriptionExists.currentPeriodEnd
+    }
+}
 
 export const subscriptionService = {
-    createCheckOutSession
+    createCheckOutSession,
+    handleWebHook,
+    getSubscriptionStatus
 }
